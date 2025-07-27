@@ -4,7 +4,6 @@ import aiohttp
 import gspread
 import openai
 from aiogram import Bot, Dispatcher, types
-from aiogram.enums import ContentType
 from oauth2client.service_account import ServiceAccountCredentials
 import asyncio
 import json
@@ -42,11 +41,11 @@ async def ocr_space_file(file_path):
             async with session.post(url, data=form) as resp:
                 return await resp.json()
 
-async def gpt_structured_fields(text):
+def gpt_structured_fields(text):
     prompt = (
         "Ты — умный помощник. Разбери распознанный с чека eBay текст на такие поля и верни как JSON: "
-        "Дата заказа, Продавец, Имя, Почта, Адрес, Телефон, Товар, S/N. "
-        "Пример ответа: {\"Дата заказа\": \"...\", \"Продавец\": \"...\", ...}\n\n"
+        "Имя, Почта, Адрес, Телефон, Товар. "
+        "Пример ответа: {\"Имя\": \"...\", \"Почта\": \"...\", \"Адрес\": \"...\", \"Телефон\": \"...\", \"Товар\": \"...\"}\n\n"
         f"Вот текст для разбора:\n{text}"
     )
     response = openai.ChatCompletion.create(
@@ -55,7 +54,6 @@ async def gpt_structured_fields(text):
         max_tokens=500,
         temperature=0
     )
-    # Попробуй извлечь JSON из ответа
     try:
         content = response['choices'][0]['message']['content']
         data = json.loads(content)
@@ -77,26 +75,24 @@ async def handle_photo(message: types.Message):
     # 1. OCR
     ocr_result = await ocr_space_file(file_on_disk)
     parsed_text = ocr_result['ParsedResults'][0]['ParsedText']
+
     # 2. AI-парсинг через GPT
     structured = await asyncio.to_thread(gpt_structured_fields, parsed_text)
-    # 3. Запись в таблицу по полям (в нужном порядке)
+
+    # 3. Запись только в нужные столбцы (D, E, G, H, I)
     row = [
-        structured.get("Дата заказа", ""),
-        structured.get("Продавец", ""),
-        "",  # № п/п — можно оставить пустым
-        structured.get("Имя", ""),
-        structured.get("Почта", ""),
-        "",  # пустой столбец F
-        structured.get("Адрес", ""),
-        structured.get("Телефон", ""),
-        structured.get("Товар", ""),
-        structured.get("S/N", ""),
-        "",  # Агент
-        "Новый заказ",  # Статус по умолчанию
-        "",  # Трекинг
+        "",  # A: Дата заказа
+        "",  # B: Продавец
+        "",  # C: № п/п
+        structured.get("Имя", ""),     # D
+        structured.get("Почта", ""),   # E
+        "",  # F: пустой
+        structured.get("Адрес", ""),   # G
+        structured.get("Телефон", ""), # H
+        structured.get("Товар", ""),   # I
     ]
     sheet.append_row(row)
-    await message.reply("Заказ структурирован, добавлен в таблицу.")
+    await message.reply("Заказ структурирован и добавлен в таблицу.")
     os.remove(file_on_disk)
 
 async def main():
