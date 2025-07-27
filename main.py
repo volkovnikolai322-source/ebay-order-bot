@@ -12,13 +12,13 @@ logging.basicConfig(level=logging.INFO)
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 OCR_API_KEY = os.getenv('OCR_API_KEY')
-GOOGLE_SHEETS_KEY = os.getenv('GOOGLE_SHEETS_KEY')  # ID таблицы Google
-GSERVICE_JSON = os.getenv('GSERVICE_JSON')  # json credentials (строкой)
+GOOGLE_SHEETS_KEY = os.getenv('GOOGLE_SHEETS_KEY')  # ID Google Таблицы
+GSERVICE_JSON = os.getenv('GSERVICE_JSON')  # содержимое JSON сервисного аккаунта
 
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 
-# Настройка Google Sheets через сервисный аккаунт
+# Настройка Google Sheets
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds_dict = json.loads(GSERVICE_JSON)
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
@@ -31,7 +31,11 @@ async def ocr_space_file(file_path):
     with open(file_path, 'rb') as f:
         files = {'file': f}
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, data=data, files=files) as resp:
+            form = aiohttp.FormData()
+            form.add_field('apikey', OCR_API_KEY)
+            form.add_field('language', 'eng')
+            form.add_field('file', f, filename=file_path, content_type='image/jpeg')
+            async with session.post(url, data=form) as resp:
                 return await resp.json()
 
 @dp.message()
@@ -44,11 +48,11 @@ async def handle_photo(message: types.Message):
     file_on_disk = f"{photo.file_id}.jpg"
     await bot.download_file(file_path, file_on_disk)
 
-    # Распознаём текст
+    # Распознаём текст через OCR Space
     ocr_result = await ocr_space_file(file_on_disk)
     parsed_text = ocr_result['ParsedResults'][0]['ParsedText']
     
-    # Для примера просто пишем в таблицу всё в одну ячейку
+    # Добавляем строку в Google Таблицу (можно улучшить парсинг под свои поля)
     sheet.append_row([parsed_text])
 
     await message.reply("Заказ распознан и добавлен в таблицу.")
