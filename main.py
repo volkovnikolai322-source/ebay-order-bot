@@ -19,7 +19,7 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 
-# Настройка Google Sheets
+# Настройка Google Sheets — лист Ebay 2
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds_dict = json.loads(GSERVICE_JSON)
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
@@ -32,7 +32,6 @@ async def ocr_space_file(file_path):
     url = 'https://api.ocr.space/parse/image'
     data = {'apikey': OCR_API_KEY, 'language': 'eng'}
     with open(file_path, 'rb') as f:
-        files = {'file': f}
         async with aiohttp.ClientSession() as session:
             form = aiohttp.FormData()
             form.add_field('apikey', OCR_API_KEY)
@@ -62,6 +61,12 @@ def gpt_structured_fields(text):
         print("Ошибка парсинга JSON:", e)
         return {}
 
+def ensure_row_490(sheet):
+    existing_rows = len(sheet.get_all_values())
+    needed = 489 - existing_rows
+    for _ in range(max(0, needed)):
+        sheet.append_row([""] * 13)  # 13 — если у тебя 13 столбцов
+
 @dp.message()
 async def handle_photo(message: types.Message):
     if not message.photo:
@@ -79,7 +84,7 @@ async def handle_photo(message: types.Message):
     # 2. AI-парсинг через GPT
     structured = await asyncio.to_thread(gpt_structured_fields, parsed_text)
 
-    # 3. Запись только в нужные столбцы (D, E, G, H, I)
+    # 3. Запись только в нужные столбцы (D, E, G, H, I), с контролем строки 490+
     row = [
         "",  # A: Дата заказа
         "",  # B: Продавец
@@ -90,7 +95,12 @@ async def handle_photo(message: types.Message):
         structured.get("Адрес", ""),   # G
         structured.get("Телефон", ""), # H
         structured.get("Товар", ""),   # I
+        "",  # J: S/N
+        "",  # K: Агент
+        "",  # L: Статус
+        "",  # M: Трекинг
     ]
+    ensure_row_490(sheet)
     sheet.append_row(row)
     await message.reply("Заказ структурирован и добавлен в таблицу.")
     os.remove(file_on_disk)
