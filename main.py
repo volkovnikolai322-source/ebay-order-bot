@@ -24,7 +24,7 @@ SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/au
 creds_dict = json.loads(GSERVICE_JSON)
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
 client = gspread.authorize(creds)
-sheet = client.open_by_key(GOOGLE_SHEETS_KEY).sheet1
+sheet = client.open_by_key(GOOGLE_SHEETS_KEY).worksheet("Ebay 2")
 
 openai.api_key = OPENAI_API_KEY
 
