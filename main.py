@@ -22,10 +22,20 @@ bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds_dict = json.loads(GSERVICE_JSON)
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
-client_gsheets = gspread.authorize(creds)
-sheet = client_gsheets.open_by_key(GOOGLE_SHEETS_KEY).worksheet("Ebay 2")
+try:
+    creds_dict = json.loads(GSERVICE_JSON)
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
+    client_gsheets = gspread.authorize(creds)
+    logging.info(f"Сервисный аккаунт: {creds_dict['client_email']}")
+    spreadsheet = client_gsheets.open_by_key(GOOGLE_SHEETS_KEY)
+    logging.info(f"Открыл таблицу: {GOOGLE_SHEETS_KEY}")
+    worksheets = spreadsheet.worksheets()
+    logging.info("Доступные листы: " + ', '.join([ws.title for ws in worksheets]))
+    sheet = spreadsheet.worksheet("Ebay 2")
+    logging.info("Открыл лист: Ebay 2")
+except Exception as e:
+    logging.error(f"Ошибка при инициализации Google Sheets: {e}")
+    raise
 
 SYSTEM_PROMPT = """
 Ты ассистент по обработке заказов eBay. Извлеки из текста только следующие поля:
@@ -79,92 +89,105 @@ def fake_sn(model):
     return code + random_digits(10)
 
 def ensure_row_490(sheet):
-    existing_rows = len(sheet.get_all_values())
-    needed = 489 - existing_rows
-    for _ in range(max(0, needed)):
-        sheet.append_row([""] * 13)
+    try:
+        existing_rows = len(sheet.get_all_values())
+        needed = 489 - existing_rows
+        if needed > 0:
+            logging.info(f"Добавляю {needed} пустых строк до строки 490")
+        for _ in range(max(0, needed)):
+            sheet.append_row([""] * 13)
+    except Exception as e:
+        logging.error(f"Ошибка в ensure_row_490: {e}")
 
 def gpt_structured_fields(text):
-    client = openai.Client(api_key=OPENAI_API_KEY)
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"Распознанный текст:\n{text}"}
-        ],
-        max_tokens=400,
-        temperature=0.7
-    )
     try:
+        client = openai.Client(api_key=OPENAI_API_KEY)
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Распознанный текст:\n{text}"}
+            ],
+            max_tokens=400,
+            temperature=0.7
+        )
         content = response.choices[0].message.content
+        logging.info(f"Ответ GPT: {content}")
         data = json.loads(content)
         return data
     except Exception as e:
-        print("Ошибка парсинга JSON:", e)
+        logging.error(f"Ошибка при работе с OpenAI/GPT: {e}")
         return {}
 
 @dp.message()
 async def handle_photo(message: types.Message):
-    if not message.photo:
-        return
-    photo = message.photo[-1]
-    file = await bot.get_file(photo.file_id)
-    file_path = file.file_path
-    file_on_disk = f"{photo.file_id}.jpg"
-    await bot.download_file(file_path, file_on_disk)
-
-    # 1. OCR
-    ocr_result = await ocr_space_file(file_on_disk)
-    parsed_text = ocr_result['ParsedResults'][0]['ParsedText']
-
-    # 2. AI-парсинг через GPT
-    structured = await asyncio.to_thread(gpt_structured_fields, parsed_text)
-    address = structured.get("Адрес", "")
-    product = structured.get("Товар", "")
-
-    # 3. Генерируем телефон и серийник
-    zip_code, city = parse_zip_and_city(address)
-    phone = fake_phone(zip_code)
-    sn = fake_sn(product)
-
-    # 4. Запись только в нужные столбцы (D, G, H, I, J)
-    row = [
-        "",                   # A
-        "",                   # B
-        "",                   # C
-        "",                   # D: Имя не требуется
-        "",                   # E: Почта не требуется
-        "",                   # F
-        address,              # G: Адрес
-        phone,                # H: Телефон
-        product,              # I: Товар
-        sn,                   # J: S/N
-        "", "", ""            # K, L, M
-    ]
-    ensure_row_490(sheet)
-    logging.info(f"Попытка добавить строку: {row} (len={len(row)})")
     try:
-        sheet.append_row(row)
-        logging.info("Добавление прошло успешно!")
-    except Exception as e:
-        logging.error(f"Ошибка при добавлении строки: {e}")
+        if not message.photo:
+            logging.info("Сообщение не содержит фото.")
+            return
+        photo = message.photo[-1]
+        file = await bot.get_file(photo.file_id)
+        file_path = file.file_path
+        file_on_disk = f"{photo.file_id}.jpg"
+        await bot.download_file(file_path, file_on_disk)
+        logging.info(f"Фото скачано: {file_on_disk}")
 
-    await message.reply("Заказ структурирован и добавлен в таблицу.")
-    os.remove(file_on_disk)
+        # 1. OCR
+        ocr_result = await ocr_space_file(file_on_disk)
+        parsed_text = ocr_result['ParsedResults'][0]['ParsedText']
+        logging.info(f"OCR результат: {parsed_text}")
+
+        # 2. AI-парсинг через GPT
+        structured = await asyncio.to_thread(gpt_structured_fields, parsed_text)
+        address = structured.get("Адрес", "")
+        product = structured.get("Товар", "")
+
+        # 3. Генерируем телефон и серийник
+        zip_code, city = parse_zip_and_city(address)
+        phone = fake_phone(zip_code)
+        sn = fake_sn(product)
+
+        # 4. Запись только в нужные столбцы (D, G, H, I, J)
+        row = [
+            "", "", "", "", "", "",
+            address,      # G: Адрес
+            phone,        # H: Телефон
+            product,      # I: Товар
+            sn,           # J: S/N
+            "", "", ""
+        ]
+        ensure_row_490(sheet)
+        logging.info(f"Попытка добавить строку: {row} (len={len(row)})")
+        try:
+            sheet.append_row(row)
+            logging.info("Добавление прошло успешно!")
+        except Exception as e:
+            logging.error(f"Ошибка при добавлении строки: {e}")
+
+        await message.reply("Заказ структурирован и добавлен в таблицу.")
+        os.remove(file_on_disk)
+        logging.info("Фото удалено после обработки.")
+    except Exception as e:
+        logging.error(f"Ошибка в handle_photo: {e}")
 
 async def ocr_space_file(file_path):
     url = 'https://api.ocr.space/parse/image'
     data = {'apikey': OCR_API_KEY, 'language': 'eng'}
-    with open(file_path, 'rb') as f:
-        async with aiohttp.ClientSession() as session:
-            form = aiohttp.FormData()
-            form.add_field('apikey', OCR_API_KEY)
-            form.add_field('language', 'eng')
-            form.add_field('file', f, filename=file_path, content_type='image/jpeg')
-            async with session.post(url, data=form) as resp:
-                return await resp.json()
+    try:
+        with open(file_path, 'rb') as f:
+            async with aiohttp.ClientSession() as session:
+                form = aiohttp.FormData()
+                form.add_field('apikey', OCR_API_KEY)
+                form.add_field('language', 'eng')
+                form.add_field('file', f, filename=file_path, content_type='image/jpeg')
+                async with session.post(url, data=form) as resp:
+                    return await resp.json()
+    except Exception as e:
+        logging.error(f"Ошибка в ocr_space_file: {e}")
+        return {"ParsedResults": [{"ParsedText": ""}]}
 
 async def main():
+    logging.info("Бот запущен.")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
