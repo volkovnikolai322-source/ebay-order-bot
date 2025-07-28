@@ -124,7 +124,7 @@ def get_and_use_next_email(sheet):
     emails = sheet.col_values(18)[1:]
     for i, email in enumerate(emails, start=2):  # строки с 2-й
         if email.strip():
-            sheet.update(f"R{i}", "")
+            sheet.update(f"R{i}", [[""]])
             logging.info(f"Использован email {email} из R{i}")
             return email
     logging.warning("В массиве email нет доступных адресов.")
