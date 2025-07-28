@@ -130,6 +130,25 @@ def get_and_use_next_email(sheet):
     logging.warning("В массиве email нет доступных адресов.")
     return ""
 
+# ----------- ДОБАВЛЕНО: функция для скриншота с ожиданием шрифтов -----------
+async def make_screenshot_with_fonts(url, filename):
+    from playwright.async_api import async_playwright
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(
+            viewport={'width': 1920, 'height': 1080},
+            device_scale_factor=2
+        )
+        page = await context.new_page()
+        await page.goto(url)
+        await page.wait_for_load_state('networkidle')
+        await page.evaluate('''return document.fonts.ready''')
+        await asyncio.sleep(2)  # Дать ещё время на подгрузку шрифтов
+        await page.screenshot(path=filename, full_page=True)
+        await browser.close()
+
+# ------------------------------------------------------------------------------
+
 @dp.message()
 async def handle_photo(message: types.Message):
     try:
@@ -192,9 +211,20 @@ async def handle_photo(message: types.Message):
         except Exception as e:
             logging.error(f"Ошибка при добавлении строки: {e}")
 
+        # 7. Делаем скриншот с ожиданием шрифтов (пример: скриншот страницы на Тильде)
+        url = "https://amzrcpt.tilda.ws/amazon"  # Заменить на нужную страницу Тильды!
+        screenshot_file = f"{photo.file_id}_screenshot.png"
+        await make_screenshot_with_fonts(url, screenshot_file)
+        logging.info(f"Скриншот страницы сохранён: {screenshot_file}")
+
+        # 8. Отправляем скриншот пользователю
+        with open(screenshot_file, "rb") as f:
+            await message.reply_photo(f, caption="Вот скриншот страницы с корректными шрифтами!")
+
         await message.reply("Заказ структурирован и добавлен в таблицу.")
         os.remove(file_on_disk)
-        logging.info("Фото удалено после обработки.")
+        os.remove(screenshot_file)
+        logging.info("Фото и скриншот удалены после обработки.")
     except Exception as e:
         logging.error(f"Ошибка в handle_photo: {e}")
 
