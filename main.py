@@ -84,6 +84,13 @@ def ensure_row_490(sheet):
     for _ in range(max(0, needed)):
         sheet.append_row([""] * 13)
 
+logging.info(f"Попытка добавить строку: {row} (len={len(row)})")
+try:
+    sheet.append_row(row)
+    logging.info("Добавление прошло успешно!")
+except Exception as e:
+    logging.error(f"Ошибка при добавлении строки: {e}")
+
 def gpt_structured_fields(text):
     client = openai.Client(api_key=OPENAI_API_KEY)
     response = client.chat.completions.create(
