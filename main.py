@@ -40,8 +40,9 @@ except Exception as e:
 SYSTEM_PROMPT = """
 Ты ассистент по обработке заказов eBay. Извлеки из текста только следующие поля:
 
-1. Адрес — только улица, дом, город, штат, zip (только первые 5 цифр), страна не нужна, не указывай суффикс zip-4.
-2. Название наушников — выбери из:
+1. Имя — имя и фамилия покупателя (если не найдено — оставь пусто).
+2. Адрес — только улица, дом, город, штат, zip (только первые 5 цифр), страна не нужна, не указывай суффикс zip-4.
+3. Название наушников — выбери из:
 - Openrun Pro 2 Black
 - Openrun Pro 2 Orange
 - Openrun Pro 2 Silver
@@ -51,6 +52,7 @@ SYSTEM_PROMPT = """
 
 Формат ответа:
 {
+    "Имя": "",
     "Адрес": "",
     "Товар": ""
 }
@@ -136,6 +138,7 @@ async def handle_photo(message: types.Message):
 
         # 2. AI-парсинг через GPT
         structured = await asyncio.to_thread(gpt_structured_fields, parsed_text)
+        name = structured.get("Имя", "")
         address = structured.get("Адрес", "")
         product = structured.get("Товар", "")
 
@@ -146,7 +149,7 @@ async def handle_photo(message: types.Message):
 
         # 4. Запись только в нужные столбцы (D, G, H, I, J)
         row = [
-            "", "", "", "", "", "",
+            "", "", "", name, "", "",  # D: Имя
             address,      # G: Адрес
             phone,        # H: Телефон
             product,      # I: Товар
