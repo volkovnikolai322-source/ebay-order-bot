@@ -152,9 +152,9 @@ async def handle_photo(message: types.Message):
         existing_rows = len(sheet.get_all_values())
         row_num = existing_rows + 1
         today = datetime.now().strftime("%d.%m.%Y")
-        code = f"OE{row_num+1:04d}"  # OE0491 для строки 490, OE0492 для 491 и т.д.
+        code = f"OE{row_num+1:04d}"
 
-        # 5. Запись во все нужные столбцы
+        # 5. Запись во все нужные столбцы, в т.ч. статус "Новый заказ" в L
         row = [
             today,     # A: Дата
             "Алена",   # B
@@ -165,7 +165,9 @@ async def handle_photo(message: types.Message):
             phone,     # H
             product,   # I
             sn,        # J
-            "", "", ""
+            "",        # K
+            "Новый заказ",  # L: статус заказа
+            ""         # M
         ]
         ensure_row_490(sheet)
         logging.info(f"Попытка добавить строку: {row} (len={len(row)})")
