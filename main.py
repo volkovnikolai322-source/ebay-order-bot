@@ -9,6 +9,7 @@ from aiogram import Bot, Dispatcher, types
 from oauth2client.service_account import ServiceAccountCredentials
 import asyncio
 import json
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 
@@ -147,13 +148,23 @@ async def handle_photo(message: types.Message):
         phone = fake_phone(zip_code)
         sn = detect_model_code(product) + random_digits(10)
 
-        # 4. Запись только в нужные столбцы (D, G, H, I, J)
+        # 4. Определяем номер строки
+        existing_rows = len(sheet.get_all_values())
+        row_num = existing_rows + 1
+        today = datetime.now().strftime("%d.%m.%Y")
+        code = f"OE{row_num+1:04d}"  # OE0491 для строки 490, OE0492 для 491 и т.д.
+
+        # 5. Запись во все нужные столбцы
         row = [
-            "", "", "", name, "", "",  # D: Имя
-            address,      # G: Адрес
-            phone,        # H: Телефон
-            product,      # I: Товар
-            sn,           # J: S/N
+            today,     # A: Дата
+            "Алена",   # B
+            code,      # C
+            name,      # D
+            "", "",    # E, F
+            address,   # G
+            phone,     # H
+            product,   # I
+            sn,        # J
             "", "", ""
         ]
         ensure_row_490(sheet)
