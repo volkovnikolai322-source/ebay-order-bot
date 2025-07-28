@@ -24,10 +24,8 @@ dp = Dispatcher()
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds_dict = json.loads(GSERVICE_JSON)
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
-client = gspread.authorize(creds)
-sheet = client.open_by_key(GOOGLE_SHEETS_KEY).worksheet("Ebay 2")
-
-openai.api_key = OPENAI_API_KEY
+client_gsheets = gspread.authorize(creds)
+sheet = client_gsheets.open_by_key(GOOGLE_SHEETS_KEY).worksheet("Ebay 2")
 
 SYSTEM_PROMPT = """
 Ты ассистент по обработке заказов eBay. Извлеки из текста только следующие поля:
@@ -49,7 +47,6 @@ SYSTEM_PROMPT = """
 Если данные не удалось найти, оставь поле пустым. Не добавляй пояснений, только валидный JSON.
 """
 
-# Коды моделей для серийника
 MODEL_CODES = {
     "Openrun Pro 2 Black": "S820",
     "Openrun Pro 2 Orange": "S820",
@@ -60,14 +57,12 @@ MODEL_CODES = {
 }
 
 def random_digits(n):
-    # Возвращает строку из n случайных цифр, не допускает одинаковых подряд и простых последовательностей
     while True:
         digits = ''.join(random.choices('0123456789', k=n))
         if not re.match(r'(123456|654321|000000|111111|222222|333333|444444|555555|666666|777777|888888|999999)', digits):
             return digits
 
 def parse_zip_and_city(address):
-    # Выделяет zip и город из строки адреса
     zip_match = re.search(r'(\b\d{5}\b)', address)
     zip_code = zip_match.group(1) if zip_match else "00000"
     city_match = re.search(r'([A-Za-z ]+),\s?[A-Z]{2}\s?' + zip_code, address)
@@ -75,7 +70,6 @@ def parse_zip_and_city(address):
     return zip_code, city
 
 def fake_phone(zip_code):
-    # Генерирует фейковый телефон, где первые три цифры — zip_code, остальные — рандом
     area = zip_code[:3] if zip_code and zip_code[0] != "0" else str(random.randint(201, 999))
     rest = random_digits(7)
     return f"{area}{rest}"
@@ -84,8 +78,15 @@ def fake_sn(model):
     code = MODEL_CODES.get(model, "S000")
     return code + random_digits(10)
 
+def ensure_row_490(sheet):
+    existing_rows = len(sheet.get_all_values())
+    needed = 489 - existing_rows
+    for _ in range(max(0, needed)):
+        sheet.append_row([""] * 13)
+
 def gpt_structured_fields(text):
-    response = openai.chat.completions.create(
+    client = openai.Client(api_key=OPENAI_API_KEY)
+    response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -101,12 +102,6 @@ def gpt_structured_fields(text):
     except Exception as e:
         print("Ошибка парсинга JSON:", e)
         return {}
-
-def ensure_row_490(sheet):
-    existing_rows = len(sheet.get_all_values())
-    needed = 489 - existing_rows
-    for _ in range(max(0, needed)):
-        sheet.append_row([""] * 13)
 
 @dp.message()
 async def handle_photo(message: types.Message):
