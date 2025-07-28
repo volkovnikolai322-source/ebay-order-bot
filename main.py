@@ -57,15 +57,6 @@ SYSTEM_PROMPT = """
 Если данные не удалось найти, оставь поле пустым. Не добавляй пояснений, только валидный JSON.
 """
 
-MODEL_CODES = {
-    "Openrun Pro 2 Black": "S820",
-    "Openrun Pro 2 Orange": "S820",
-    "Openrun Pro 2 Silver": "S820",
-    "Openswim Pro Gray": "S710",
-    "Openswim Pro Red": "S710",
-    "2025 Opencomm 2 UC USB-C": "C120"
-}
-
 def random_digits(n):
     while True:
         digits = ''.join(random.choices('0123456789', k=n))
@@ -84,9 +75,15 @@ def fake_phone(zip_code):
     rest = random_digits(7)
     return f"{area}{rest}"
 
-def fake_sn(model):
-    code = MODEL_CODES.get(model, "S000")
-    return code + random_digits(10)
+def detect_model_code(product):
+    product = (product or "").lower()
+    if "openrun pro 2" in product:
+        return "S820"
+    if "openswim pro" in product:
+        return "S710"
+    if "opencomm 2" in product:
+        return "C120"
+    return "S000"
 
 def ensure_row_490(sheet):
     try:
@@ -145,7 +142,7 @@ async def handle_photo(message: types.Message):
         # 3. Генерируем телефон и серийник
         zip_code, city = parse_zip_and_city(address)
         phone = fake_phone(zip_code)
-        sn = fake_sn(product)
+        sn = detect_model_code(product) + random_digits(10)
 
         # 4. Запись только в нужные столбцы (D, G, H, I, J)
         row = [
