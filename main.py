@@ -119,6 +119,17 @@ def gpt_structured_fields(text):
         logging.error(f"Ошибка при работе с OpenAI/GPT: {e}")
         return {}
 
+def get_and_use_next_email(sheet):
+    # R — 18-й столбец, начиная с R2
+    emails = sheet.col_values(18)[1:]
+    for i, email in enumerate(emails, start=2):  # строки с 2-й
+        if email.strip():
+            sheet.update(f"R{i}", "")
+            logging.info(f"Использован email {email} из R{i}")
+            return email
+    logging.warning("В массиве email нет доступных адресов.")
+    return ""
+
 @dp.message()
 async def handle_photo(message: types.Message):
     try:
@@ -148,19 +159,23 @@ async def handle_photo(message: types.Message):
         phone = fake_phone(zip_code)
         sn = detect_model_code(product) + random_digits(10)
 
-        # 4. Определяем номер строки
+        # 4. Получаем следующий email из массива
+        email = get_and_use_next_email(sheet)
+
+        # 5. Определяем номер строки
         existing_rows = len(sheet.get_all_values())
         row_num = existing_rows + 1
         today = datetime.now().strftime("%d.%m.%Y")
         code = f"OE{row_num+1:04d}"
 
-        # 5. Запись во все нужные столбцы, в т.ч. статус "Новый заказ" в L
+        # 6. Запись во все нужные столбцы, включая email в E
         row = [
             today,     # A: Дата
             "Алена",   # B
             code,      # C
             name,      # D
-            "", "",    # E, F
+            email,     # E: email из массива
+            "",        # F
             address,   # G
             phone,     # H
             product,   # I
